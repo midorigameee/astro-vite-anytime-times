@@ -1,0 +1,38 @@
+{
+  "name": "NodeContainerAnywhereTimes",
+  "build": {
+    "dockerfile": "./Dockerfile"
+  },
+  "forwardPorts": [4321],
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    {
+      "type": "bind",
+      "source": ".",
+      "target": "/workspace"
+    },
+    {
+      "type": "volume",
+      "source": "node_modules",
+      "target": "/workspace/node_modules"
+    }
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "stylelint.vscode-stylelint",
+        "ritwickdey.LiveServer",
+        "dsznajder.es7-react-js-snippets",
+        "formulahendry.auto-rename-tag",
+        "formulahendry.auto-close-tag",
+        "yzhang.markdown-all-in-one"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  }
+}
