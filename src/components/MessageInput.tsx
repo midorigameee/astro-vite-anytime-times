@@ -40,6 +40,20 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
+  const handlePaste = (event: React.ClipboardEvent) => {
+    const items = event.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          onFileSelect(file);
+        }
+        event.preventDefault();
+        break;
+      }
+    }
+  };
+
   return (
     <>
       <input
@@ -58,6 +72,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         value={newMessage}
         onChange={(e) => setNewMessage(e.target.value)}
         onKeyPress={handleKeyPress}
+        onPaste={handlePaste}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
