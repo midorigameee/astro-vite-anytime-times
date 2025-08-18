@@ -14,9 +14,10 @@ import {
   DialogActions,
   Button,
   LinearProgress,
-  TextField,
 } from "@mui/material";
-import { Cancel, Settings, ContentCopy } from "@mui/icons-material";
+import { Cancel, Settings } from "@mui/icons-material";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 
 import Header from "./components/Header";
 import Timeline from "./components/Timeline";
@@ -81,6 +82,15 @@ const initialMessages: Message[] = [
   },
 ];
 
+// Base64のデータURLからMIMEタイプとBase64データを抽出する
+const decodeDataURL = (
+  dataURL: string
+): { mime: string; data: string } | null => {
+  const match = dataURL.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) return null;
+  return { mime: match[1], data: match[2] };
+};
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -90,12 +100,7 @@ function App() {
   );
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [storageUsage, setStorageUsage] = useState<{
-    used: number;
-    quota: number;
-  } | null>(null);
-  const [isMarkdownDialogOpen, setIsMarkdownDialogOpen] = useState(false);
-  const [markdownContent, setMarkdownContent] = useState("");
+  const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
 
   const isInitialLoad = useRef(true);
 
@@ -154,68 +159,60 @@ function App() {
     }
   };
 
-  // Markdownダイアログを開く
-  const handleOpenMarkdownDialog = () => {
-    setMarkdownContent(generateMarkdown());
-    setIsMarkdownDialogOpen(true);
-  };
+  const handleExportZip = async () => {
+    const zip = new JSZip();
+    const dailyMessages: { [key: string]: Message[] } = {};
 
-  // Markdownダイアログを閉じる
-  const handleCloseMarkdownDialog = () => {
-    setIsMarkdownDialogOpen(false);
-    setMarkdownContent("");
-  };
-
-  // Markdownをクリップボードにコピー
-  const handleCopyMarkdown = () => {
-    navigator.clipboard.writeText(markdownContent);
-    alert("Markdownがクリップボードにコピーされました！");
-  };
-
-  // Markdown生成ロジック
-  const generateMarkdown = () => {
-    let markdown = "";
-    let lastDate = "";
-
+    // 日付ごとにメッセージをグループ化
     messages.forEach((msg) => {
-      const messageDate = new Date(msg.id).toLocaleDateString("ja-JP", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-      if (messageDate !== lastDate) {
-        markdown += `
-# ${messageDate}
-
-`;
-        lastDate = messageDate;
+      const date = new Date(msg.id).toISOString().split("T")[0]; // YYYY-MM-DD
+      if (!dailyMessages[date]) {
+        dailyMessages[date] = [];
       }
-
-      // トップレベルメッセージ
-      markdown += `## ${msg.timestamp} ${msg.user.name}
-`;
-      markdown += `${msg.text}
-`; // メッセージ本文
-      if (msg.image) {
-        markdown += `![画像](${msg.image})
-`;
-      }
-
-      // 返信
-      msg.replies.forEach((reply) => {
-        markdown += `### ${reply.timestamp}
-`; // 返信の投稿時間
-        markdown += `${reply.text}
-`; // 返信のメッセージ本文
-        if (reply.image) {
-          markdown += `![画像](${reply.image})
-`;
-        }
-      });
-      markdown += `
-`;
+      dailyMessages[date].push(msg);
     });
-    return markdown;
+
+    for (const date in dailyMessages) {
+      const dateFolder = zip.folder(date);
+      if (!dateFolder) continue;
+
+      let markdownContent = `# ${date}\n\n`;
+      let imageCounter = 1;
+
+      for (const msg of dailyMessages[date]) {
+        markdownContent += `## ${msg.timestamp} ${msg.user.name}\n`;
+        markdownContent += `${msg.text}\n`;
+
+        if (msg.image) {
+          const decoded = decodeDataURL(msg.image);
+          if (decoded) {
+            const extension = decoded.mime.split("/")[1] || "png";
+            const imageName = `image-${imageCounter++}.${extension}`;
+            dateFolder.file(imageName, decoded.data, { base64: true });
+            markdownContent += `![画像](./${imageName})\n`;
+          }
+        }
+
+        for (const reply of msg.replies) {
+          markdownContent += `### ${reply.timestamp}\n`;
+          markdownContent += `${reply.text}\n`;
+          if (reply.image) {
+            const decoded = decodeDataURL(reply.image);
+            if (decoded) {
+              const extension = decoded.mime.split("/")[1] || "png";
+              const imageName = `image-${imageCounter++}.${extension}`;
+              dateFolder.file(imageName, decoded.data, { base64: true });
+              markdownContent += `![画像](./${imageName})\n`;
+            }
+          }
+        }
+        markdownContent += `\n`;
+      }
+      dateFolder.file(`${date}.md`, markdownContent);
+    }
+
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, "anytimes-export.zip");
   };
 
   const handleFileSelect = (file: File) => {
@@ -340,7 +337,7 @@ function App() {
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <Box sx={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-        <Header onExportMarkdown={handleOpenMarkdownDialog}>
+        <Header onExportMarkdown={handleExportZip}>
           <IconButton color="inherit" onClick={handleOpenSettings}>
             <Settings />
           </IconButton>
@@ -387,10 +384,7 @@ function App() {
               {replyingToMessage && (
                 <Box sx={{ mb: 1 }}>
                   <Chip
-                    label={`返信中: "${replyingToMessage.text.substring(
-                      0,
-                      20
-                    )}..."`}
+                    label={`返信中: "${replyingToMessage.text.substring(0, 20)}"...`}
                     onDelete={handleCancelReply}
                     color="primary"
                     size="small"
@@ -446,32 +440,6 @@ function App() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseSettings}>閉じる</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Markdown出力ダイアログ */}
-      <Dialog
-        open={isMarkdownDialogOpen}
-        onClose={handleCloseMarkdownDialog}
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle>Markdown出力</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            multiline
-            rows={15}
-            value={markdownContent}
-            InputProps={{ readOnly: true }}
-            variant="outlined"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCopyMarkdown} startIcon={<ContentCopy />}>
-            コピー
-          </Button>
-          <Button onClick={handleCloseMarkdownDialog}>閉じる</Button>
         </DialogActions>
       </Dialog>
     </ThemeProvider>
